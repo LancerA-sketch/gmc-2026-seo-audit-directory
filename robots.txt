@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Allow: /brands/
+Allow: /assets/
+Sitemap: https://schemaguard-2026.github.io/gmc-2026-seo-audit-directory/sitemap.xml
