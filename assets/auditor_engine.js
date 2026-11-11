@@ -7,7 +7,8 @@
 
   const GUMROAD_LINKS = Object.freeze({
     extension: 'https://vothanh1.gumroad.com/l/istvro',
-    dropInKit: 'https://vothanh1.gumroad.com/l/eolvo'
+    dropInKit: 'https://vothanh1.gumroad.com/l/istvro',
+    enterpriseSuite: 'https://vothanh1.gumroad.com/l/istvro'
   });
 
   function parseRawInput(rawInput) {
