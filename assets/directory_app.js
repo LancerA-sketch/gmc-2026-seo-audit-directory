@@ -201,6 +201,8 @@
         ctrl.addEventListener('change', applyFilters);
       }
     });
+    const qsStore = new URLSearchParams(window.location.search || '').get('store');
+    if (qsStore && searchInput) searchInput.value = qsStore;
     applyFilters();
   }
 
