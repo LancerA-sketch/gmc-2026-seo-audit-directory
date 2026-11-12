@@ -1,199 +1,167 @@
 /**
- * SchemaGuard 2026 — 12-Point GMC Readiness & Variant Stock Trap Auditor Engine
- * Zero-Backend Browser & Node Compatible Engine (Strictly <= 250 Lines)
+ * SchemaGuard Pro v3.0 — 12-Criterion GMC 2026 & AI GEO Auditor Engine (Browser + Node)
+ * 100% Synchronized Single Source of Truth with Chrome Extension v3.0 (audit_core.js).
+ * Strictly <= 250 Lines | Zero Remotely Hosted Code | Zero Fake GTINs
  */
 (function (root) {
   'use strict';
 
+  const H = root.SchemaGuardHelpers || (typeof require === 'function' ? require('./auditor_helpers_v30.js') : null);
+  const OFFICIAL_CWS_URL = 'https://chromewebstore.google.com/detail/dejgbohjjnefmjpiopjgmiafhmgbkadn';
   const GUMROAD_LINKS = Object.freeze({
+    cwsFree: OFFICIAL_CWS_URL,
     extension: 'https://vothanh1.gumroad.com/l/istvro',
     dropInKit: 'https://vothanh1.gumroad.com/l/istvro',
     enterpriseSuite: 'https://vothanh1.gumroad.com/l/istvro'
   });
 
-  function parseRawInput(rawInput) {
-    const input = String(rawInput || '').trim();
-    const scriptRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-    const scripts = [];
-    let match;
-    while ((match = scriptRegex.exec(input)) !== null) {
-      scripts.push(match[1].trim());
-    }
-    const isFullHtml = /<html|<head|<body|<script|<meta|<h1/i.test(input);
-    if (scripts.length === 0 && input.startsWith('{')) scripts.push(input);
-    const combinedJsonLd = scripts.join('\n');
+  function auditProductInput(rawInput, opts) {
+    const raw = String(rawInput || '').trim(), domain = (opts && opts.domain) || 'example.com', pj = (opts && opts.shopifyJs) || null;
+    const wrappedHtml = (!/<script\b/i.test(raw) && (raw.startsWith('{') || raw.startsWith('['))) ? '<script type="application/ld+json">' + raw + '</script>' : raw;
+    const titleTagM = wrappedHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const rawTitleTag = titleTagM ? H.cleanText(titleTagM[1]).split('|')[0].split('–')[0].split('—')[0].split(' - ')[0].trim() : '';
+    const ogTitle = H.getMeta(wrappedHtml, 'property', 'og:title') || H.getMeta(wrappedHtml, 'name', 'twitter:title');
+    const metaDesc = H.getMeta(wrappedHtml, 'name', 'description') || H.getMeta(wrappedHtml, 'property', 'og:description');
+    const ogSite = H.getMeta(wrappedHtml, 'property', 'og:site_name'), ogImg = H.getMeta(wrappedHtml, 'property', 'og:image');
+    const ogPriceRaw = H.getMeta(wrappedHtml, 'property', 'og:price:amount') || H.getMeta(wrappedHtml, 'property', 'product:price:amount');
+    const ogCur = H.getMeta(wrappedHtml, 'property', 'og:price:currency') || H.getMeta(wrappedHtml, 'property', 'product:price:currency');
 
-    const getMeta = function (name) {
-      const rx = new RegExp('<meta[^>]+(?:property|name)=["\']' + name + '["\'][^>]+content=["\']([^"\']*)["\']', 'i');
-      const m = input.match(rx);
-      return m ? m[1].trim() : '';
+    let productBlocks = 0, hasDomGtin = false, hasSchemaBrand = false, hasOfferPrice = false, hasCurrency = false, hasAggregateRating = false;
+    let hasProductGroup = false, hasFaqSchema = false, hasSchemaDesc = false, hasInvalidDomGtin = false, domVariantCount = 0, domInStockCount = 0, domFirstVarOos = false;
+    let danglingRet = false, danglingShip = false, hasRet = false, hasShip = false, hasStorePrice = false, hasStoreCurrency = false;
+    let extractedTitle = rawTitleTag || (ogTitle ? ogTitle.split('|')[0].trim() : ''), extractedDesc = H.cleanText(metaDesc || '');
+    let extractedBrand = ogSite || domain.split('.')[0], hasStoreBrand = Boolean(ogSite && ogSite.trim());
+    let extractedPrice = '79.95', extractedCurrency = 'USD', extractedSku = '', extractedGtin = '', ratingValue = '', reviewCount = '0';
+    const ogP = ogPriceRaw ? parseFloat(ogPriceRaw.replace(/[^0-9.]/g, '')) : NaN;
+    if (Number.isFinite(ogP) && ogP > 0) { extractedPrice = ogP.toFixed(2); hasStorePrice = true; }
+    if (ogCur && /^[A-Z]{3}$/i.test(ogCur.trim())) { extractedCurrency = ogCur.trim().toUpperCase(); hasStoreCurrency = true; }
+
+    const schemaImagesSet = new Set(), domGs1Set = new Set(), rawImgs = ogImg ? [ogImg] : [], parsedBlocks = [], topProductNodes = [];
+    Array.from(wrappedHtml.matchAll(/(<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>)([\s\S]*?)<\/script>/gi)).forEach(function (m) {
+      try { parsedBlocks.push(JSON.parse((m[2] || '').trim())); } catch (_e) {}
+    });
+    const idMap = H.buildIdMap(parsedBlocks);
+
+    const chkPol = function (off) {
+      const rRaw = Array.isArray(off.hasMerchantReturnPolicy) ? off.hasMerchantReturnPolicy[0] : off.hasMerchantReturnPolicy, rPol = H.resolveNode(rRaw, idMap);
+      if (rPol && typeof rPol === 'object' && (rPol['@type'] || rPol.returnPolicyCategory || rPol.merchantReturnDays !== undefined || rPol.returnFees)) hasRet = true;
+      else if (rRaw && typeof rRaw === 'object' && rRaw['@id']) danglingRet = true;
+      const sRaw = Array.isArray(off.shippingDetails) ? off.shippingDetails[0] : off.shippingDetails, sDet = H.resolveNode(sRaw, idMap);
+      if (sDet && typeof sDet === 'object' && (sDet['@type'] || sDet.shippingRate !== undefined || sDet.deliveryTime || sDet.shippingDestination)) hasShip = true;
+      else if (sRaw && typeof sRaw === 'object' && sRaw['@id']) danglingShip = true;
     };
-
-    const h1Matches = input.match(/<h1[\s>]/gi) || [];
-    const h1TextMatch = input.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-    const cleanH1 = h1TextMatch ? h1TextMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-    const hasCanonical = /<link[^>]+rel=["']canonical["']/i.test(input) || !isFullHtml;
-    const imgMatches = input.match(/<img[\s>]/gi) || [];
-
-    return {
-      input: input,
-      isFullHtml: isFullHtml,
-      scripts: scripts,
-      combinedJsonLd: combinedJsonLd,
-      ogTitle: getMeta('og:title'),
-      ogDesc: getMeta('og:description') || getMeta('description'),
-      ogImage: getMeta('og:image'),
-      h1Count: isFullHtml ? (h1Matches.length || 1) : 1,
-      h1Title: cleanH1,
-      hasCanonical: hasCanonical,
-      domImgCount: imgMatches.length
+    const inspectOffer = function (offRaw, fbSku) {
+      const off = H.resolveNode(offRaw, idMap);
+      if (!off || typeof off !== 'object') return;
+      const p = off.price !== undefined ? off.price : (off.lowPrice !== undefined ? off.lowPrice : off.highPrice);
+      if (p !== undefined && p !== null && String(p).trim() !== '' && parseFloat(String(p).replace(/[^0-9.]/g, '')) > 0) {
+        hasOfferPrice = true; hasStorePrice = true; extractedPrice = parseFloat(String(p).replace(/[^0-9.]/g, '')).toFixed(2);
+      }
+      if (off.priceCurrency && /^[A-Z]{3}$/i.test(String(off.priceCurrency).trim())) {
+        hasCurrency = true; hasStoreCurrency = true; extractedCurrency = String(off.priceCurrency).trim().toUpperCase();
+      }
+      chkPol(off);
+      const bc = H.parseBarcode(off.gtin13 || off.gtin12 || off.gtin14 || off.gtin8 || off.gtin, off.sku || fbSku);
+      if (bc.isValidGtin) { hasDomGtin = true; domGs1Set.add(bc.gtinVal); if (!extractedGtin) extractedGtin = bc.gtinVal; }
+      if (Array.isArray(off.offers)) off.offers.forEach(function (sub) { inspectOffer(sub, fbSku); });
     };
-  }
-
-  function buildFixedJsonLd(meta) {
-    const m = meta || {};
-    const currency = m.currency || 'USD';
-    let fixedTitle = String(m.title || 'Verified D2C Store Product — 2026 Edition').trim();
-    if (fixedTitle.length < 20) fixedTitle = fixedTitle + ' — 2026 Verified GMC Edition';
-    if (fixedTitle.length > 70) fixedTitle = fixedTitle.slice(0, 68).trim();
-    const payload = {
-      '@context': 'https://schema.org/',
-      '@type': 'Product',
-      '@id': (m.url || 'https://store.example.com/products/verified-item') + '#schemaguard-2026',
-      name: fixedTitle,
-      description: (m.description && m.description.length >= 160)
-        ? m.description
-        : 'Authentic ' + fixedTitle + ' with verified 2026 Google Merchant Center structured data, active in-stock variant resolution, global GTIN-13 barcode, 30-day return policy, and shipping rate details.',
-      image: [
-        m.image || 'https://cdn.shopify.com/s/files/1/0582/1136/9133/files/azwmxt6llttmc2cwxbpj.jpg',
-        'https://cdn.shopify.com/s/files/1/1007/8070/files/OW086SS25_COTTON_VARSITY_COAT_0249.jpg',
-        'https://stoneandstrand.com/cdn/products/gallery-3.jpg',
-        'https://doseofcolors.com/cdn/shop/files/RIDE_OR_DIE_LINER.jpg'
-      ],
-      sku: m.sku || 'SG-2026-VERIFIED-SKU',
-      mpn: m.sku || 'SG-2026-MPN',
-      gtin13: m.gtin || '0085002026991',
-      brand: { '@type': 'Brand', name: m.brand || 'Verified D2C Merchant' },
-      aggregateRating: { '@type': 'AggregateRating', ratingValue: '4.9', reviewCount: 84, bestRating: '5', worstRating: '1' },
-      offers: {
-        '@type': 'Offer',
-        url: m.url || 'https://store.example.com/products/verified-item',
-        priceCurrency: currency,
-        price: m.price || '68.00',
-        availability: 'https://schema.org/InStock',
-        itemCondition: 'https://schema.org/NewCondition',
-        hasMerchantReturnPolicy: {
-          '@type': 'MerchantReturnPolicy',
-          applicableCountry: 'US',
-          returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
-          merchantReturnDays: 30,
-          returnMethod: 'https://schema.org/ReturnByMail',
-          returnFees: 'https://schema.org/FreeReturn'
-        },
-        shippingDetails: {
-          '@type': 'OfferShippingDetails',
-          shippingRate: { '@type': 'MonetaryAmount', value: '0.00', currency: currency },
-          shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'US' }
+    const inspectProd = function (nodeRaw, isChild) {
+      const node = H.resolveNode(nodeRaw, idMap);
+      if (!node || typeof node !== 'object') return;
+      if (H.normTypes(node['@type']).indexOf('ProductGroup') !== -1 || node.hasVariant || node.productGroupID) hasProductGroup = true;
+      if (!isChild && node.name && (!extractedTitle || extractedTitle === rawTitleTag)) extractedTitle = H.cleanText(node.name);
+      const d = node.description ? H.cleanText(node.description) : '';
+      if (d.length >= 20) { hasSchemaDesc = true; if (!isChild || !extractedDesc) extractedDesc = d; }
+      if (node.sku) extractedSku = H.cleanSku(node.sku, extractedSku);
+      const bc = H.parseBarcode(node.gtin13 || node.gtin12 || node.gtin14 || node.gtin8 || node.gtin, node.sku || extractedSku);
+      if (bc.isValidGtin) { hasDomGtin = true; domGs1Set.add(bc.gtinVal); if (!extractedGtin) extractedGtin = bc.gtinVal; }
+      const bObj = H.resolveNode(node.brand, idMap);
+      if (bObj) {
+        const bName = typeof bObj === 'object' ? (bObj.name || '') : String(bObj);
+        if (String(bName).trim()) { if (typeof bObj === 'object') hasSchemaBrand = true; hasStoreBrand = true; extractedBrand = H.cleanText(bName); }
+      }
+      if (node.image) (Array.isArray(node.image) ? node.image : [node.image]).forEach(function (im) { const u = H.normImg(H.resolveNode(im, idMap)); if (u) { schemaImagesSet.add(u); rawImgs.push(u); } });
+      const agg = H.resolveNode(node.aggregateRating, idMap);
+      if (agg && typeof agg === 'object' && parseInt(String(agg.reviewCount || agg.ratingCount || '0'), 10) > 0 && parseFloat(String(agg.ratingValue || '0')) > 0) {
+        hasAggregateRating = true; ratingValue = String(agg.ratingValue); reviewCount = String(agg.reviewCount || agg.ratingCount);
+      }
+      chkPol(node);
+      const offList = Array.isArray(node.offers) ? node.offers : (node.offers ? [node.offers] : []);
+      offList.forEach(function (o) { inspectOffer(o, node.sku || extractedSku); });
+      if (node.hasVariant) {
+        const vArr = (Array.isArray(node.hasVariant) ? node.hasVariant : [node.hasVariant]).map(function (v) { return H.resolveNode(v, idMap); });
+        if (vArr.length > domVariantCount) {
+          domVariantCount = vArr.length;
+          domInStockCount = vArr.filter(function (v) { const vo = H.resolveNode(Array.isArray(v && v.offers) ? v.offers[0] : (v && v.offers), idMap); return !(vo && vo.availability) || !/OutOfStock/i.test(String(vo.availability)); }).length;
+          const fVo = H.resolveNode(Array.isArray(vArr[0] && vArr[0].offers) ? vArr[0].offers[0] : (vArr[0] && vArr[0].offers), idMap);
+          domFirstVarOos = Boolean(fVo && fVo.availability && /OutOfStock/i.test(String(fVo.availability)));
         }
+        vArr.forEach(function (vNode) { inspectProd(vNode, true); });
+      } else if (!isChild && !pj && offList.length > 1 && domVariantCount === 0) {
+        const rOffs = offList.map(function (o) { return H.resolveNode(o, idMap); });
+        domVariantCount = rOffs.length;
+        domInStockCount = rOffs.filter(function (o) { return !(o && o.availability) || !/OutOfStock/i.test(String(o.availability)); }).length;
+        domFirstVarOos = Boolean(rOffs[0] && rOffs[0].availability && /OutOfStock/i.test(String(rOffs[0].availability)));
       }
     };
-    return JSON.stringify(payload, null, 2);
+    parsedBlocks.forEach(function (blk) {
+      const q = Array.isArray(blk) ? blk.slice() : [blk];
+      for (let i = 0; i < q.length; i++) {
+        const it = q[i];
+        if (!it || typeof it !== 'object') continue;
+        if (Array.isArray(it['@graph'])) { Array.prototype.push.apply(q, it['@graph']); continue; }
+        const t = H.normTypes(it['@type']);
+        if (t.indexOf('FAQPage') !== -1) hasFaqSchema = true;
+        if (t.indexOf('Product') !== -1 || t.indexOf('ProductGroup') !== -1) { productBlocks++; inspectProd(it, false); topProductNodes.push(it); }
+        else if (it.mainEntity) Array.prototype.push.apply(q, Array.isArray(it.mainEntity) ? it.mainEntity : [it.mainEntity]);
+      }
+    });
+
+    let variantsCount = domVariantCount > 1 ? domVariantCount : 1, inStockCount = domVariantCount > 1 ? domInStockCount : 1;
+    let firstVariantTrap = domVariantCount > 1 && domFirstVarOos && inStockCount > 0, barcodesCount = domGs1Set.size, hasUnexposedGs1 = false;
+    if (pj && Array.isArray(pj.variants) && pj.variants.length > 0) {
+      variantsCount = pj.variants.length;
+      inStockCount = pj.variants.filter(function (v) { return v.available !== false && Boolean(v.available); }).length;
+      firstVariantTrap = !pj.variants[0].available && inStockCount > 0;
+      const jsGs1 = new Set();
+      barcodesCount = pj.variants.filter(function (v) { const b = H.parseBarcode(v.barcode, v.sku); if (b.isValidGtin) jsGs1.add(b.gtinVal); return b.isValidGtin; }).length;
+      hasUnexposedGs1 = barcodesCount > 0 && Array.from(jsGs1).some(function (b) { return !domGs1Set.has(b); });
+    }
+    topProductNodes.forEach(function (p) { if (H.evalMpnSafe(p, variantsCount, idMap).invalidGtin) hasInvalidDomGtin = true; });
+    const mpnSafeMode = !hasDomGtin && barcodesCount === 0 && !hasInvalidDomGtin && topProductNodes.some(function (p) { return H.evalMpnSafe(p, variantsCount, idMap).validMpn; });
+    const cleanBody = wrappedHtml.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ');
+    const mdMatches = cleanBody.match(/\bitemtype\s*=\s*["'][^"']*schema\.org\/Product(?:Group)?\b[^"']*["']/gi), microdataCount = mdMatches ? mdMatches.length : 0;
+    const hasSizeTable = Array.from(cleanBody.matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)).some(function (tm) { return /chest|waist|inseam|size|cm|inch/i.test(tm[1] || ''); });
+    const isApparel = /shirt|hoodie|pant|legging|bra|jacket|dress|shoe|boot|apparel|sweater|sock/i.test(extractedTitle + ' ' + extractedDesc);
+    const noJsonLd = productBlocks === 0, finalImgs = H.dedupeImgs(rawImgs, domain), schemaImgsCnt = schemaImagesSet.size, pageImgsCnt = Math.max(schemaImgsCnt, finalImgs.length);
+    const hasValidMeta = Boolean(extractedTitle && extractedTitle.length >= 3 && extractedDesc && extractedDesc.length >= 20);
+    const c01 = (productBlocks === 1 && microdataCount === 0) ? 12 : 0, c02 = (noJsonLd ? !firstVariantTrap : (!firstVariantTrap && (!isApparel || hasSizeTable))) ? 12 : 0;
+    const c03 = (hasOfferPrice && hasCurrency) ? 10 : ((noJsonLd && hasStorePrice && hasStoreCurrency) ? 5 : 0);
+    const c04 = (!hasInvalidDomGtin && !hasUnexposedGs1 && (barcodesCount > 0 ? hasDomGtin : (hasDomGtin || mpnSafeMode))) ? 10 : 0;
+    const c05 = (hasRet && !danglingRet) ? 10 : 0, c06 = (hasShip && !danglingShip) ? 10 : 0, c07 = (hasProductGroup || (variantsCount <= 1 && productBlocks === 1)) ? 8 : 0;
+    const c08 = (hasSchemaBrand || (noJsonLd && hasStoreBrand)) ? 6 : 0, c09 = (schemaImgsCnt >= 3) ? 6 : ((noJsonLd && pageImgsCnt >= 3) ? 3 : 0);
+    const c10 = hasAggregateRating ? 6 : 0, c11 = (hasSchemaDesc || (noJsonLd && hasValidMeta)) ? 5 : 0, c12 = hasFaqSchema ? 5 : 0;
+    const criteria = [
+      { id: 'C01', weight: 12, earned: c01, pass: c01 === 12, failMsg: (productBlocks === 0 && microdataCount === 0) ? 'CRITICAL (-12): No Product JSON-LD found on page.' : ('CONFLICT (-12): ' + productBlocks + ' Product JSON-LD + ' + microdataCount + ' Microdata blocks.') },
+      { id: 'C02', weight: 12, earned: c02, pass: c02 === 12, failMsg: firstVariantTrap ? ('VARIANT TRAP (-12): Variant #1 is OutOfStock while ' + inStockCount + '/' + variantsCount + ' variants are InStock.') : 'GEO APPAREL (-12): Missing semantic <table> size chart for AI Shopping.' },
+      { id: 'C03', weight: 10, earned: c03, pass: c03 === 10, failMsg: c03 === 5 ? 'OFFER SCHEMA (-5): Price & currency found in OpenGraph/.js, but Offer JSON-LD is missing.' : 'OFFER PRICE (-10): Missing valid numeric price or 3-letter ISO priceCurrency.' },
+      { id: 'C04', weight: 10, earned: c04, pass: c04 === 10, failMsg: hasUnexposedGs1 ? ('UNEXPOSED BARCODE (-10): Unexposed GS1 Barcode in Shopify Inventory (' + barcodesCount + '/' + variantsCount + ' variants in .js omitted from DOM Schema).') : (hasInvalidDomGtin ? 'INVALID GTIN (-10): Invalid non-numeric/alphanumeric or wrong-length gtin* in DOM Schema (route custom codes to mpn instead).' : ('MISSING IDENTIFIERS (-10): Missing valid GS1 barcode or Brand + SKU + MPN across 100% of ' + variantsCount + ' variant(s).')) },
+      { id: 'C05', weight: 10, earned: c05, pass: c05 === 10, failMsg: 'GMC 2026 (-10): Missing mandatory hasMerchantReturnPolicy (merchantReturnDays, returnFees).' },
+      { id: 'C06', weight: 10, earned: c06, pass: c06 === 10, failMsg: 'GMC 2026 (-10): Missing mandatory shippingDetails (shippingRate, handlingTime, transitTime).' },
+      { id: 'C07', weight: 8, earned: c07, pass: c07 === 8, failMsg: 'VARIANT GRAPH (-8): ' + variantsCount + ' variants not linked via ProductGroup / hasVariant.' },
+      { id: 'C08', weight: 6, earned: c08, pass: c08 === 6, failMsg: 'BRAND ENTITY (-6): Missing structured @type Brand object.' },
+      { id: 'C09', weight: 6, earned: c09, pass: c09 === 6, failMsg: c09 === 3 ? ('SCHEMA IMAGES (-3): ' + pageImgsCnt + ' HD images on page/.js, but 0 attached to Product JSON-LD.') : ('IMAGES (-6): Only ' + schemaImgsCnt + ' schema image(s) found (3+ high-res images required).') },
+      { id: 'C10', weight: 6, earned: c10, pass: c10 === 6, failMsg: 'SOCIAL PROOF (-6): 0 customer reviews on product yet (0 fake reviews injected; +6 pts auto-unlocks upon 1st real review).' },
+      { id: 'C11', weight: 5, earned: c11, pass: c11 === 5, failMsg: 'METADATA (-5): Missing or thin semantic product description (<20 chars) in Schema.' },
+      { id: 'C12', weight: 5, earned: c12, pass: c12 === 5, failMsg: 'GEO CITATION (-5): No FAQPage schema detected for Perplexity / ChatGPT Shopping.' }
+    ];
+    let score = 0; const deductions = [];
+    criteria.forEach(function (c) { score += c.earned; if (!c.pass) deductions.push({ id: c.id, points: -(c.weight - c.earned), message: c.failMsg }); });
+    const fixedJsonLd = H.buildFixedJsonLd({ title: extractedTitle, description: extractedDesc, brand: extractedBrand, price: extractedPrice, currency: extractedCurrency, sku: extractedSku, gtin13: extractedGtin, images: finalImgs, ratingValue: ratingValue, reviewCount: reviewCount });
+    return { score: score, deduction: 100 - score, severity: score >= 80 ? 'OPTIMAL' : (score >= 55 ? 'HIGH RISK' : 'CRITICAL'), duplicateConflict: productBlocks > 1 || microdataCount > 0, firstVariantTrap: firstVariantTrap, deductions: deductions, criteria: criteria, brokenCode: raw || '<!-- No Product JSON-LD detected -->', fixedJsonLd: fixedJsonLd };
   }
 
-  function auditProductInput(rawInput) {
-    const parsed = parseRawInput(rawInput);
-    const raw = parsed.combinedJsonLd || parsed.input;
-
-    const productBlocks = (raw.match(/"@type"\s*:\s*"(Product|ProductGroup|IndividualProduct)"/gi) || []).length;
-    const hasProductSchema = productBlocks > 0;
-    const extract = function (rx) {
-      const m = raw.match(rx);
-      return m ? m[1].trim() : '';
-    };
-
-    const title = extract(/"name"\s*:\s*"([^"]+)"/i) || parsed.h1Title || parsed.ogTitle;
-    const description = extract(/"description"\s*:\s*"([^"]+)"/i) || parsed.ogDesc;
-    const sku = extract(/"sku"\s*:\s*"([^"]+)"/i);
-    const gtin = extract(/"(?:gtin|gtin13|gtin12|gtin14|gtin8|mpn|isbn)"\s*:\s*"([^"]+)"/i);
-    const price = extract(/"price"\s*:\s*"?([0-9]+(?:\.[0-9]{1,2})?)"?/i);
-    const currency = extract(/"priceCurrency"\s*:\s*"([A-Z]{3})"/i) || 'USD';
-    const brandMatch = raw.match(/"brand"\s*:\s*(\{[\s\S]*?\}|"[^"]+")/i);
-    const imgArr = raw.match(/"image"\s*:\s*\[([\s\S]*?)\]/i);
-    const singleImg = extract(/"image"\s*:\s*"([^"]+)"/i) || parsed.ogImage;
-
-    let imageCount = parsed.domImgCount;
-    if (imgArr) {
-      imageCount = Math.max(imageCount, (imgArr[1].match(/"http[^"]+"/gi) || []).length);
-    } else if (singleImg) {
-      imageCount = Math.max(imageCount, 1);
-    }
-
-    const hasBrand = Boolean(brandMatch && brandMatch[1].replace(/["{}\s]/g, '').length > 0);
-    const hasReturnPolicy = /"hasMerchantReturnPolicy"\s*:/i.test(raw);
-    const hasShippingDetails = /"shippingDetails"\s*:/i.test(raw);
-    const hasAggregateRating = /"aggregateRating"\s*:/i.test(raw);
-
-    const availabilities = [];
-    const availRx = /"availability"\s*:\s*"([^"]+)"/gi;
-    let am;
-    while ((am = availRx.exec(raw)) !== null) availabilities.push(am[1]);
-    const outOfStockCount = availabilities.filter(function (a) { return /OutOfStock/i.test(a); }).length;
-    const inStockCount = availabilities.filter(function (a) { return /InStock/i.test(a); }).length;
-    const firstOfferOOS = availabilities.length > 0 && /OutOfStock/i.test(availabilities[0]);
-    const firstVariantTrap = Boolean((firstOfferOOS && inStockCount > 0) || (outOfStockCount > 0 && inStockCount === 0));
-    const duplicateConflict = productBlocks > 1;
-
-    let score = 0;
-    const deductions = [];
-    const criteria = [];
-
-    const addRule = function (id, label, earned, maxPts, msg) {
-      score += earned;
-      const lost = maxPts - earned;
-      criteria.push({ id: id, label: label, earned: earned, maxPts: maxPts, lost: lost, status: lost === 0 ? 'PASS' : 'FAIL' });
-      if (lost > 0 && msg) deductions.push({ id: id, points: -lost, message: msg });
-    };
-
-    addRule('jsonld_core', '1. Product JSON-LD Core (@type: Product)', hasProductSchema ? 20 : 5, 20, 'CRITICAL (-15 pts): Missing @type Product JSON-LD block.');
-    addRule('duplicate_conflict', '2. Single Canonical Product Schema Block', productBlocks === 1 ? 8 : (productBlocks > 1 ? 2 : 0), 8, productBlocks > 1 ? 'CONFLICT (-6 pts): Detected ' + productBlocks + ' duplicate Product JSON-LD blocks.' : 'SCHEMA (-8 pts): 0 Product JSON-LD blocks detected.');
-    const tPts = (title.length >= 20 && title.length <= 70) ? 7 : (title.length > 70 ? 4 : 2);
-    addRule('title_opt', '3. GMC Product Title Length (20-70 chars)', tPts, 7, 'TITLE (-' + (7 - tPts) + ' pts): Title length outside optimal 20-70 chars.');
-    const dPts = description.length >= 160 ? 8 : (description.length >= 70 ? 5 : (description.length > 0 ? 2 : 0));
-    addRule('description_depth', '4. Semantic Description (>=160 chars)', dPts, 8, 'DESCRIPTION (-' + (8 - dPts) + ' pts): Description missing or under 160 chars.');
-    const iPts = imageCount >= 4 ? 7 : (imageCount >= 2 ? 5 : (imageCount === 1 ? 3 : 0));
-    addRule('image_gallery', '5. High-Res Product Image Gallery (4+ imgs)', iPts, 7, 'IMAGES (-' + (7 - iPts) + ' pts): Fewer than 4 product images in JSON-LD.');
-    const hasPrice = Boolean(price && parseFloat(price) > 0);
-    const pPts = (hasPrice ? 8 : 0) + (currency ? 4 : 0);
-    addRule('offer_price', '6. Numeric Offer Price & ISO Currency', pPts, 12, 'PRICE (-' + (12 - pPts) + ' pts): Missing valid numeric price or currency.');
-    addRule('brand_field', '7. Explicit Brand Object (@type: Brand)', hasBrand ? 7 : 2, 7, 'BRAND (-5 pts): Missing Brand object in JSON-LD.');
-    addRule('sku_field', '8. Merchant SKU Identifier', sku ? 6 : 0, 6, 'SKU (-6 pts): Missing SKU identifier in JSON-LD.');
-    addRule('gtin_field', '9. Global Barcode (gtin13 / mpn)', gtin ? 8 : 0, 8, 'GMC 2026 (-8 pts): Missing global barcode (gtin13 / mpn).');
-    addRule('return_policy', '10. GMC 2026 MerchantReturnPolicy Object', hasReturnPolicy ? 6 : 0, 6, 'GMC 2026 (-6 pts): Missing hasMerchantReturnPolicy in Offer.');
-    addRule('shipping_details', '11. GMC 2026 OfferShippingDetails Object', hasShippingDetails ? 6 : 0, 6, 'GMC 2026 (-6 pts): Missing shippingDetails in Offer.');
-    const domPts = (parsed.h1Count === 1 ? 2 : 0) + (parsed.hasCanonical ? 1 : 0) + (hasAggregateRating ? 2 : 0);
-    addRule('semantic_dom', '12. Semantic DOM & AggregateRating Sync', domPts, 5, 'REVIEWS/DOM (-' + (5 - domPts) + ' pts): Missing aggregateRating or duplicate H1.');
-
-    if (firstVariantTrap) {
-      score = Math.max(15, score - 5);
-      deductions.unshift({ id: 'variant_trap', points: -5, message: 'VARIANT TRAP (-5 pts): Variant #1 is OutOfStock while other variants are InStock!' });
-    }
-
-    score = Math.min(100, Math.max(15, score));
-    const fixedJsonLd = buildFixedJsonLd({ title: title, description: description, price: price, currency: currency, sku: sku, gtin: gtin });
-
-    return {
-      score: score,
-      severity: score >= 80 ? 'OPTIMAL' : (score >= 55 ? 'HIGH RISK' : 'CRITICAL'),
-      duplicateConflict: duplicateConflict,
-      firstVariantTrap: firstVariantTrap,
-      deductions: deductions,
-      criteria: criteria,
-      brokenCode: raw || '<!-- No Product JSON-LD detected -->',
-      fixedJsonLd: fixedJsonLd
-    };
-  }
-
-  const api = { GUMROAD_LINKS: GUMROAD_LINKS, parseRawInput: parseRawInput, buildFixedJsonLd: buildFixedJsonLd, auditProductInput: auditProductInput };
+  const api = { OFFICIAL_CWS_URL: OFFICIAL_CWS_URL, GUMROAD_LINKS: GUMROAD_LINKS, buildFixedJsonLd: H.buildFixedJsonLd, auditProductInput: auditProductInput };
   root.SchemaGuardAuditor = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

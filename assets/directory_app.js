@@ -1,5 +1,5 @@
 /**
- * SchemaGuard 2026 — Public Search Directory & Live Inspector Controller
+ * SchemaGuard Pro v3.0 — Public Search Directory & Live 12-Point Inspector Controller
  * Strictly <= 250 Lines | Zero Remotely Hosted Code | Safe DOM Construction
  */
 (function () {
@@ -31,7 +31,7 @@
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).catch(function () {});
         }
-        btn.textContent = 'Copied 100/100 JSON-LD ✓';
+        btn.textContent = 'Copied Clean v3.0 JSON-LD ✓';
         setTimeout(function () { btn.textContent = origLabel; }, 1800);
       });
     });
@@ -61,14 +61,14 @@
     }
     if (trapEl) {
       trapEl.textContent = res.firstVariantTrap
-        ? 'VARIANT #1 OUT-OF-STOCK TRAP DETECTED (-5 pts)'
-        : (res.duplicateConflict ? 'DUPLICATE PRODUCT BLOCK CONFLICT (-6 pts)' : 'Variant Stock & Canonical Block Verified');
+        ? 'VARIANT #1 OUT-OF-STOCK TRAP DETECTED (-12 pts)'
+        : (res.duplicateConflict ? 'DUPLICATE PRODUCT BLOCK CONFLICT (-12 pts)' : 'Variant Stock & Canonical Block Verified');
       trapEl.className = 'status-badge ' + ((res.firstVariantTrap || res.duplicateConflict) ? 'badge-critical' : 'badge-optimal');
     }
     if (deductList) {
       while (deductList.firstChild) deductList.removeChild(deductList.firstChild);
       if (res.deductions.length === 0) {
-        const li = el('li', '', '✔ All 12 Google Merchant Center 2026 Readiness Checks Passed (100/100).');
+        const li = el('li', '', '✔ All 12 Google Merchant Center 2026 & AI GEO Readiness Checks Passed (100/100).');
         li.style.color = '#6ee7b7';
         deductList.appendChild(li);
       } else {
@@ -114,7 +114,8 @@
     link.style.textDecoration = 'none';
     link.style.fontSize = '0.94rem';
 
-    const scoreBadge = el('span', 'status-badge ' + (b.score < 55 ? 'badge-critical' : 'badge-high'), b.score + '/100');
+    const badgeCls = b.score >= 80 ? 'badge-optimal' : (b.score >= 55 ? 'badge-high' : 'badge-critical');
+    const scoreBadge = el('span', 'status-badge ' + badgeCls, b.score + '/100');
     domainRow.appendChild(link);
     domainRow.appendChild(scoreBadge);
 
@@ -135,10 +136,10 @@
     tagsRow.style.flexWrap = 'wrap';
     tagsRow.style.gap = '6px';
     tagsRow.appendChild(el('span', 'status-badge badge-neutral', b.niche));
-    if (b.trap) tagsRow.appendChild(el('span', 'status-badge badge-critical', 'Variant #1 OOS Trap'));
-    if (b.dup) tagsRow.appendChild(el('span', 'status-badge badge-high', b.blocks + 'x Duplicate Schema'));
-    if (b.missing.indexOf('hasMerchantReturnPolicy') !== -1) tagsRow.appendChild(el('span', 'status-badge badge-neutral', 'No ReturnPolicy'));
-    if (b.missing.indexOf('gtin') !== -1) tagsRow.appendChild(el('span', 'status-badge badge-neutral', 'No GTIN-13'));
+    if (b.trap) tagsRow.appendChild(el('span', 'status-badge badge-critical', 'Variant #1 OOS Trap (-12)'));
+    if (b.dup) tagsRow.appendChild(el('span', 'status-badge badge-high', b.blocks + 'x Duplicate Schema (-12)'));
+    if (b.missing.indexOf('hasMerchantReturnPolicy') !== -1) tagsRow.appendChild(el('span', 'status-badge badge-neutral', 'No ReturnPolicy (-10)'));
+    if (b.missing.indexOf('gtin') !== -1) tagsRow.appendChild(el('span', 'status-badge badge-neutral', 'Missing GTIN/MPN (-10)'));
     card.appendChild(tagsRow);
 
     const foot = el('div', '');
@@ -151,7 +152,7 @@
     stockSpan.style.fontSize = '0.76rem';
     stockSpan.style.color = b.trap ? '#fda4af' : '#6ee7b7';
 
-    const btnAudit = el('a', 'btn btn-outline btn-sm', 'View 12-Point Audit & Fix →');
+    const btnAudit = el('a', 'btn btn-outline btn-sm', 'View v3.0 Audit & Fix →');
     btnAudit.href = 'brands/' + b.domain + '.html';
     foot.appendChild(stockSpan);
     foot.appendChild(btnAudit);
@@ -180,6 +181,7 @@
         if (niche !== 'ALL' && b.niche !== niche) return false;
         if (sev === 'CRITICAL' && b.score >= 55) return false;
         if (sev === 'HIGH' && (b.score < 55 || b.score >= 80)) return false;
+        if (sev === 'OPTIMAL' && b.score < 80) return false;
         if (errType === 'TRAP' && !b.trap) return false;
         if (errType === 'DUP' && !b.dup) return false;
         if (errType !== 'ALL' && errType !== 'TRAP' && errType !== 'DUP' && b.missing.indexOf(errType) === -1) return false;
@@ -207,7 +209,7 @@
     initDirectorySearch();
     const inputEl = document.getElementById('live-inspector-input');
     if (inputEl && window.SchemaGuardAuditor) {
-      PRESETS.optimal = '<script type="application/ld+json">\n' + window.SchemaGuardAuditor.buildFixedJsonLd({ title: 'Pastel Pup Eyeshadow Palette — 2026 Verified Edition' }) + '\n</script>';
+      PRESETS.optimal = '<script type="application/ld+json">\n' + window.SchemaGuardAuditor.buildFixedJsonLd({ title: 'Pastel Pup Eyeshadow Palette — 2026 Verified Edition', includeDemoReviews: true }) + '\n</script>';
       inputEl.value = PRESETS.trap;
       runLiveInspector();
       const runBtn = document.getElementById('run-live-audit-btn');
